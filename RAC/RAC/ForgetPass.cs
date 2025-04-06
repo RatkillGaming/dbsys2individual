@@ -14,7 +14,7 @@ namespace RAC
         public ForgetPass()
         {
             InitializeComponent();
-            dbHelper = mdbConnect.GetInstance(@"Z:\QQ229\LTP1\RAC\RAC\Database1.mdb");
+            dbHelper = mdbConnect.GetInstance();
             cryptoHelper = new CryptographyHelper();
 
             // Add secret choice questions to the ComboBox

@@ -1,69 +1,99 @@
 ﻿using System;
+using System.Data;
 using System.Data.OleDb;
 
 namespace RAC
 {
     public class mdbConnect
     {
-        private static mdbConnect instance;
-        private string connectionString;
+        private static mdbConnect _instance;
+        private static string _globalDbPath;
+        private string _connectionString;
 
-        // Private constructor to prevent instantiation
-        public mdbConnect(string dbPath)
+        // Private constructor
+        private mdbConnect()
         {
-            connectionString = $"Provider=Microsoft.Jet.OLEDB.4.0;Data Source={dbPath};";
+            _connectionString = $"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={_globalDbPath};";
         }
 
-        // Public method to get the instance of the class
-        public static mdbConnect GetInstance(string dbPath)
+        // Initialize the DB path (call once at startup)
+        public static void Initialize(string dbPath)
         {
-            if (instance == null)
+            _globalDbPath = dbPath;
+        }
+
+        // Get singleton instance
+        public static mdbConnect GetInstance()
+        {
+            if (_instance == null)
             {
-                instance = new mdbConnect(dbPath);
+                if (string.IsNullOrEmpty(_globalDbPath))
+                    throw new Exception("Database path not initialized. Call Initialize() first.");
+
+                _instance = new mdbConnect();
             }
-            return instance;
+            return _instance;
         }
 
-        // Method to execute a non-query command (INSERT, UPDATE, DELETE)
-        public void ExecuteNonQuery(string query, OleDbParameter[] parameters)
+        public string GetConnectionString()
         {
-            using (OleDbConnection connection = new OleDbConnection(connectionString))
+            return _connectionString;
+        }
+
+        public OleDbDataReader ExecuteReader(string query, OleDbParameter[] parameters = null)
+        {
+            OleDbConnection connection = new OleDbConnection(_connectionString);
+            OleDbCommand command = new OleDbCommand(query, connection);
+
+            if (parameters != null)
             {
-                connection.Open();
-                using (OleDbCommand command = new OleDbCommand(query, connection))
+                command.Parameters.AddRange(parameters);
+            }
+
+            connection.Open();
+            return command.ExecuteReader(CommandBehavior.CloseConnection);
+        }
+
+        public void ExecuteNonQuery(string query, OleDbParameter[] parameters = null)
+        {
+            using (OleDbConnection conn = new OleDbConnection(_connectionString))
+            using (OleDbCommand cmd = new OleDbCommand(query, conn))
+            {
+                conn.Open();
+                if (parameters != null)
                 {
-                    if (parameters != null)
-                    {
-                        command.Parameters.AddRange(parameters);
-                    }
-                    command.ExecuteNonQuery();
+                    cmd.Parameters.AddRange(parameters);
                 }
+                cmd.ExecuteNonQuery();
             }
         }
-
-        // Method to execute a scalar query (SELECT COUNT(*), etc.)
-        public object ExecuteScalar(string query, OleDbParameter[] parameters)
+        public DataTable ExecuteQuery(string query, OleDbParameter[] parameters = null)
         {
-            using (var connection = new OleDbConnection(connectionString))
+            using (OleDbConnection conn = new OleDbConnection(_connectionString))
+            using (OleDbCommand cmd = new OleDbCommand(query, conn))
             {
-                connection.Open();
-                using (var command = new OleDbCommand(query, connection))
+                if (parameters != null)
                 {
-                    if (parameters != null)
-                    {
-                        command.Parameters.AddRange(parameters);
-                    }
-
-                    try
-                    {
-                        return command.ExecuteScalar();
-                    }
-                    catch (Exception ex)
-                    {
-                        // Log the exception or handle it as needed
-                        throw new Exception("Error executing scalar query", ex);
-                    }
+                    cmd.Parameters.AddRange(parameters);
                 }
+
+                OleDbDataAdapter adapter = new OleDbDataAdapter(cmd);
+                DataTable resultTable = new DataTable();
+                adapter.Fill(resultTable);
+                return resultTable;
+            }
+        }
+        public object ExecuteScalar(string query, OleDbParameter[] parameters = null)
+        {
+            using (OleDbConnection conn = new OleDbConnection(_connectionString))
+            using (OleDbCommand cmd = new OleDbCommand(query, conn))
+            {
+                conn.Open();
+                if (parameters != null)
+                {
+                    cmd.Parameters.AddRange(parameters);
+                }
+                return cmd.ExecuteScalar();
             }
         }
     }

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Windows.Forms;
 using System.Data.OleDb;
-using System.Linq;
 
 namespace RAC
 {
@@ -9,12 +8,12 @@ namespace RAC
     {
         private mdbConnect dbHelper;
         private CryptographyHelper cryptoHelper;
-        private string generatedOTP; // Store the generated OTP
+        private string generatedOTP;
 
         public Form1()
         {
             InitializeComponent();
-            dbHelper = new mdbConnect(@"Z:\QQ229\LTP1\RAC\RAC\Database1.mdb");
+            dbHelper = mdbConnect.GetInstance();
             cryptoHelper = new CryptographyHelper();
         }
 
@@ -35,69 +34,79 @@ namespace RAC
                 return;
             }
 
-            string getPasswordQuery = "SELECT password FROM users WHERE username = @username";
-            OleDbParameter[] passwordParameters = {
-                new OleDbParameter("@username", username)
-            };
-
-            object passwordResult = null;
+            string getUserQuery = "SELECT password, role FROM users WHERE username = @username";
+            OleDbParameter[] userParameters = {
+        new OleDbParameter("@username", username)
+    };
 
             try
             {
-                passwordResult = dbHelper.ExecuteScalar(getPasswordQuery, passwordParameters);
+                using (OleDbDataReader reader = dbHelper.ExecuteReader(getUserQuery, userParameters))
+                {
+                    if (reader.Read())
+                    {
+                        string storedPasswordWithSalt = reader["password"].ToString();
+                        string role = reader["role"].ToString();
+
+                        string[] parts = storedPasswordWithSalt.Split(':');
+                        if (parts.Length != 2)
+                        {
+                            MessageBox.Show("Invalid password format in database.");
+                            return;
+                        }
+
+                        string storedHashedPassword = parts[0];
+                        string storedSalt = parts[1];
+                        string hashedPassword = cryptoHelper.HashPassword(password, storedSalt);
+
+                        if (hashedPassword == storedHashedPassword)
+                        {
+                            if (role == "admin")
+                            {
+                                // Skip OTP for admin
+                                Form2 adminForm = new Form2();
+                                adminForm.Show();
+                                this.Hide();
+                            }
+                            else
+                            {
+                                // Regular users still need OTP
+                                generatedOTP = GenerateOTP();
+                                MessageBox.Show($"Your OTP is: {generatedOTP}", "OTP Generated");
+
+                                string userOTP = PromptForOTP();
+                                if (userOTP == generatedOTP)
+                                {
+                                    userhome userForm = new userhome();
+                                    userForm.Show();
+                                    this.Hide();
+                                }
+                                else
+                                {
+                                    MessageBox.Show("Invalid OTP. Login failed.");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            MessageBox.Show("Invalid username or password.");
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("User not found.");
+                    }
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show("An error occurred while retrieving the password: " + ex.Message);
-                return;
-            }
-
-            if (passwordResult == null || passwordResult == DBNull.Value)
-            {
-                MessageBox.Show("Invalid username or password.");
-                return;
-            }
-
-            string storedPasswordWithSalt = passwordResult.ToString();
-            string[] parts = storedPasswordWithSalt.Split(':');
-            if (parts.Length != 2)
-            {
-                MessageBox.Show("Invalid password format in the database.");
-                return;
-            }
-
-            string storedHashedPassword = parts[0];
-            string storedSalt = parts[1];
-            string hashedPassword = cryptoHelper.HashPassword(password, storedSalt);
-
-            if (hashedPassword == storedHashedPassword)
-            {
-                // Generate a 6-digit OTP
-                generatedOTP = GenerateOTP();
-                MessageBox.Show($"Your OTP is: {generatedOTP}", "OTP Generated");
-
-                // Prompt the user to enter the OTP
-                string userOTP = PromptForOTP();
-                if (userOTP == generatedOTP)
-                {
-                    MessageBox.Show("Login successful!");
-                    // Proceed to the next step, e.g., open a new form
-                }
-                else
-                {
-                    MessageBox.Show("Invalid OTP. Login failed.");
-                }
-            }
-            else
-            {
-                MessageBox.Show("Invalid username or password.");
+                MessageBox.Show("Error during login: " + ex.Message);
             }
         }
-
         private string GenerateOTP()
         {
             Random random = new Random();
-            return random.Next(100000, 999999).ToString(); // Generate a 6-digit number
+            return random.Next(100000, 999999).ToString();
         }
 
         private string PromptForOTP()
@@ -152,14 +161,8 @@ namespace RAC
 
         private void forgetPassBtn_Click(object sender, EventArgs e)
         {
-            // Create an instance of the ForgetPass form
             ForgetPass forgetPassForm = new ForgetPass();
-
-            // Show the ForgetPass form
             forgetPassForm.Show();
-
-            // Optionally, hide the current form if needed
-            // this.Hide();
         }
     }
 }
